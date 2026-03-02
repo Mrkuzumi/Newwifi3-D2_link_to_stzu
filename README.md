@@ -1,0 +1,136 @@
+# 已验证新路由3刷此固件并且进行脚本修改TTL可实现路由器上网
+## 此固件为网上找到的别人编译好的，支持科学，多拨，广告屏蔽（我自己编译和云编译出来的固件总是出错）
+> [!CAUTION]
+># 准备两条网线，全程电脑插着网线连接路由器LAN口，然后墙上网线连接路由器WAN口在刷完固件之后，请先把路由器的WAN口（浏览器进入192.168.1.1路由器后台）和电脑设置”网络偏好设置”的“以太网”的“属性”设为静态ip，将参数和你提前先用电脑连接sztu校园网的参数一样，注意路由器WAN口设置的子网掩码需要根据校园网给你分配的ip地址进行计算，具体换算为
+## 假如我的ip地址为x.x.x.x/23
+![在路由器后台查看到的ip](screenshot1.png)
+
+CIDR 前缀 /23 的含义
+```text
+/23 表示：子网掩码的二进制形式中，前 23 位 是 1，后面的位是 0。  
+子网掩码是 32 位二进制数，分成 4 段（每段 8 位）：
+
+/23 → 二进制：11111111.11111111.11111110.00000000
+
+逐段把二进制转成十进制：
+
+二进制段	十进制值	
+11111111	255	
+11111111	255	
+11111110	254	
+00000000	0	
+所以，/23 对应的子网掩码就是：255.255.254.0 
+```
+```
+你电脑以太网的网段是 192.168.1.0/24：
+/24 → 二进制：11111111.11111111.11111111.00000000
+转十进制：255.255.255.0
+```
+#### ~~其实我说问ai最快~~
+
+## 电脑设置为静态ip效果如图（例）：
+![在网络偏好设置看到的](screenshot2.png)
+```
+电脑以太网 IP 是 192.168.1.3，路由器 LAN 口是 192.168.1.1。
+路由器 LAN 口的网段是 192.168.1.0/24，对应的子网掩码就是 255.255.255.0。
+把电脑以太网子网掩码改成 255.255.255.0，电脑和路由器 LAN 口就完全在同一个网段里，访问 192.168.1.1 会更稳定，也不会和其他网段产生干扰。
+```
+### 刷机后使用PuTTY（或者其它软件） SSH连接192.168.1.1后粘贴以下脚本即可：
+```bash
+
+#开启IP转发
+echo 1 > /proc/sys/net/ipv4/ip_forward
+#开启NAT（伪装）
+iptables -t nat -A POSTROUTING -o eth0.2 -j MASQUERADE
+#设置TTL为128，伪装成单设备,我们学校是128，具体多少看你学校
+iptables -t mangle -A POSTROUTING -o eth0.2 -j TTL --ttl-set 128
+#保存规则到防火墙自启（重启不丢）
+echo -e "echo 1 > /proc/sys/net/ipv4/ip_forward\niptables -t nat -A POSTROUTING -o eth0.2 -j MASQUERADE\niptables -t mangle -A POSTROUTING -o eth0.2 -j TTL --ttl-set 128" >> /etc/firewall.user
+chmod +x /etc/firewall.user
+/etc/init.d/firewall restart
+```
+## 执行完以上命令，路由器重启后可能会失效，然后再执行：
+```bash
+# 开启 IP 转发
+echo 1 > /proc/sys/net/ipv4/ip_forward
+
+# 开启 NAT 伪装（让其他设备能上网）
+iptables -t nat -A POSTROUTING -o eth0.2 -j MASQUERADE
+
+# 设置 TTL 为 128，防多设备检测
+iptables -t mangle -A POSTROUTING -o eth0.2 -j TTL --ttl-set 128
+#把规则写入 /etc/firewall.user，这样每次开机都会自动加载：
+cat >> /etc/firewall.user << 'EOF'
+echo 1 > /proc/sys/net/ipv4/ip_forward
+iptables -t nat -A POSTROUTING -o eth0.2 -j MASQUERADE
+iptables -t mangle -A POSTROUTING -o eth0.2 -j TTL --ttl-set 128
+EOF
+
+chmod +x /etc/firewall.user
+/etc/init.d/firewall restart
+```
+## 祝你成功，别忘了在LuCI界面设置无线网络的名称密码以及是否开启SSID广播
+### 有问题请~~STFAI~~STFW
+> [!TIP]
+> ## 有时候修改完设置重启路由器依然上不了网，就再ssh连接192.168.1.1执行第二段命令就好了
+>### 不过这样好像有点麻烦，为此我让ai写了一个bat脚本，你需要先下载PuTTY的命令行版本plink[点我下载](https://the.earth.li/~sgtatham/putty/latest/w64/plink.exe)，然后要保证plink.exe和脚本.bat在一个目录下，这样理论上讲以后你只要双击这个脚本.bat就可以完成执行第二段脚本的步骤了
+### ai写的脚本：
+```bash
+@echo off
+chcp 65001 > nul
+echo ==============================================
+echo 正在连接路由器 192.168.1.1...
+echo ==============================================
+
+:: 使用plink执行SSH命令，-batch参数避免交互确认
+plink.exe -ssh root@192.168.1.1 -pw password -batch ^
+"echo 1 > /proc/sys/net/ipv4/ip_forward && ^
+iptables -t nat -A POSTROUTING -o eth0.2 -j MASQUERADE && ^
+iptables -t mangle -A POSTROUTING -o eth0.2 -j TTL --ttl-set 128 && ^
+cat >> /etc/firewall.user << 'EOF' && ^
+echo 1 > /proc/sys/net/ipv4/ip_forward && ^
+iptables -t nat -A POSTROUTING -o eth0.2 -j MASQUERADE && ^
+iptables -t mangle -A POSTROUTING -o eth0.2 -j TTL --ttl-set 128 && ^
+EOF && ^
+chmod +x /etc/firewall.user && ^
+/etc/init.d/firewall restart"
+
+:: 检查命令执行结果
+if %errorlevel% equ 0 (
+    echo.
+    echo ==============================================
+    echo 路由器配置执行成功！
+    echo ==============================================
+) else (
+    echo.
+    echo ==============================================
+    echo 错误：路由器配置执行失败！
+    echo 请检查：
+    echo 1. 路由器IP是否为192.168.1.1
+    echo 2. 用户名密码是否正确
+    echo 3. 路由器是否开启SSH服务
+    echo ==============================================
+)
+
+pause
+```
+
+> [!CAUTION]
+>### 基本的上网是解决了，现在有一个问题就是无法访问我们学校的内网系统，目前还不知道怎么解决，解决了我会更新README的
+
+## 整理By：Mika
+
+> [!TIP]
+> ## <span style="color: #22c55e;">! 又报错了</span>
+> <span style="color: #22c55e;">我知道，那你说怎么办呢</span>
+
+> [!CAUTION]
+> ## <span style="color: #ef4444;">我乱改一通，居然过了，嘿嘿嘿</span>
+
+> [!CAUTION]
+> ## <span style="color: #ef4444;">又要没完没了的STFW了？</span>
+> <span style="color: #ef4444;">对</span>
+
+## 送大家一句话，不要问我经历了什么：
+> [!CAUTION]
+> *不要随便执行AI助手给的删除命令*
