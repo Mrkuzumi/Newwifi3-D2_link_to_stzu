@@ -114,7 +114,8 @@ if %errorlevel% equ 0 (
 
 pause
 ```
-
+## 补充一点，本身路由器固件是自带NTP的，默认设置如图
+![NTP设置](screenshot3.png)
 > [!CAUTION]
 >### 基本的上网是解决了，现在有一个问题就是无法访问我们学校的内网系统，目前还不知道怎么解决，解决了我会更新README的
 
