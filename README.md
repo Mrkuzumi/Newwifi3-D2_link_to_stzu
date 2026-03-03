@@ -119,7 +119,35 @@ pause
 > [!CAUTION]
 >### 基本的上网是解决了，现在有一个问题就是无法访问我们学校的内网系统，目前还不知道怎么解决，解决了我会更新README的
 
-## 整理By：Mika
+# 报错日志1：
+## 背景：主播把路由器从宿舍搬到的实验室（主要是路由器后台WAN口设置的静态ip所有参数没有变），然后到了实验室路由器就不可用了
+## 问题根源：路由器 WAN 口「静态 IP」，且未正确匹配学校网络的 MAC/IP 绑定策略，导致学校拦截路由器流量，出现 “什么都 ping 不通、访问不了深澜 172.19.0.5”，且改回 DHCP 后，NAT（共享上网）/TTL（防检测）核心规则仅写入防火墙文件但未手动执行，规则未生效，依然无法连通。
+## 解决办法： 
+## 1.将 WAN 口从 “静态 IP” 改回 “DHCP 客户端”，恢复路由器自身 MAC，让路由器重新从学校 DHCP 服务器获取合法 IP；
+## 2. 手动执行 NAT/TTL 规则（临时生效）：
+```bash
+iptables -t nat -A POSTROUTING -o eth0.2 -j MASQUERADE
+iptables -t mangle -A POSTROUTING -o eth0.2 -j TTL --ttl-set 128
+echo 1 > /proc/sys/net/ipv4/ip_forward
+```
+## 3.重启防火墙（确保规则永久生效）：
+```bash
+/etc/init.d/firewall restart
+```
+## 验证：
+
+```bash
+#  验证核心规则是否生效（均显示1条）
+echo "NAT规则数：$(iptables -t nat -L POSTROUTING -n | grep MASQUERADE | wc -l)"
+echo "TTL规则数：$(iptables -t mangle -L POSTROUTING -n | grep TTL | wc -l)"
+echo "IP转发状态：$(cat /proc/sys/net/ipv4/ip_forward)" # 显示1
+```
+```
+#  验证网络连通性（能ping通即正常）
+ping -c 4 172.19.0.5  # 深澜认证页
+ping -c 4 www.baidu.com  # 外网
+```
+
 
 > [!TIP]
 > ## <span style="color: #22c55e;">! 又报错了</span>
@@ -135,3 +163,5 @@ pause
 ## 送大家一句话，不要问我经历了什么：
 > [!CAUTION]
 > *不要随便执行AI助手给的删除命令*
+> 
+## 整理By：Mika
